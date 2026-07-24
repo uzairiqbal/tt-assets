@@ -55,7 +55,9 @@ async function main() {
       imagePath, outDir,
       config: {
         photoroomKey: process.env.PHOTOROOM_API_KEY,
-        brandBg: process.env.BRAND_BG_PROMPT || 'a clean minimal light neutral studio background, soft even lighting',
+        geminiKey: process.env.GEMINI_API_KEY,
+        brandBg: payload.bg || process.env.BRAND_BG_PROMPT || 'a clean minimal light neutral studio background, soft even lighting',
+        engine: payload.engine || process.env.ENGINE || 'auto',
         reelAudio,
         secondsPerShot: parseFloat(process.env.SECONDS_PER_SHOT || '4'),
       },

@@ -14,12 +14,29 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Node deps (sharp for local engine)
+        run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache rembg AI model
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: rembg-u2net-v1
+
+      - name: Install rembg (free background removal)
+        run: pip install "rembg[cli]" onnxruntime
+
       # ffmpeg is preinstalled on ubuntu-latest runners
       - name: Run pipeline and reply on Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           PHOTOROOM_API_KEY: ${{ secrets.PHOTOROOM_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BRAND_BG_PROMPT: "a clean minimal light neutral studio background, soft even lighting, premium streetwear catalog"
           SECONDS_PER_SHOT: "4"
-          IG_CAPTION: "Sage-grey. Long sleeve. Zero effort, all impact. 🌿\\nPremium everyday fit — the staple your rotation's been missing.\\n📩 DM to order.\\n\\n#StreetwearEssentials #SageGreen #LongSleeveTee #MinimalStyle #EverydayEssentials #WardrobeStaple #ReelsInstagram #TShirtsAndTrousers"
+          IG_CAPTION: "Sage-grey. Long sleeve. Zero effort, all impact. 🌿\nPremium everyday fit — the staple your rotation's been missing.\n📩 DM to order.\n\n#StreetwearEssentials #SageGreen #LongSleeveTee #MinimalStyle #EverydayEssentials #WardrobeStaple #ReelsInstagram #TShirtsAndTrousers"
         run: node ci/run.js
