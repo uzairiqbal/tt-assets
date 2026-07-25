@@ -11,7 +11,6 @@ const os = require('os');
 const { runPipeline } = require('../pipeline.js');
 const { pick: pickCaption } = require('../captions.js');
 const { hostOnPages } = require('./instagram.js');
-const { makeReporter } = require('./progress.js');
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
@@ -61,8 +60,12 @@ async function main() {
   const chatId = payload.chat_id;
   if (!photoUrl || !chatId) { console.error('missing photo_url/chat_id'); process.exit(1); }
 
-  const progress = makeReporter(BOT, chatId);
-  await progress.start('⚙️ Starting — downloading your photo…');
+  // Milestone updates are sent as fresh messages — not edits — so each one
+  // is a real notification and the whole run stays visible in chat history
+  // if you check back after it's finished, instead of only ever showing
+  // whatever the last edit happened to be.
+  const milestone = l => tgJson('sendMessage', { chat_id: chatId, text: l });
+  await milestone('⚙️ Starting — downloading your photo…');
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ttrun-'));
   const outDir = path.join(work, 'out');
@@ -76,7 +79,13 @@ async function main() {
     const repoAudio = path.join(__dirname, '..', 'assets', 'audio.mp3');
     const reelAudio = fs.existsSync(repoAudio) ? repoAudio : '';
 
-    const emit = l => progress.update(l);
+    // Every line goes to the Action log (full detail, for debugging).
+    // Only step headers/results (▶ ✓ ✅ ⚠) also go to Telegram, as their
+    // own message — the per-scene "· ..." lines would just be noise there.
+    const emit = l => {
+      console.log(l);
+      if (/^\s*[▶✓✅⚠]/.test(l)) milestone(l.trim());
+    };
     const { shotPaths, reelPath } = await runPipeline({
       imagePath, outDir,
       config: {
@@ -90,7 +99,7 @@ async function main() {
       emit,
     });
 
-    await progress.update('▶ Step 3 — sending shots + reel to this chat');
+    await milestone('▶ Step 3 — sending shots + reel to this chat');
 
     // 1 — 3 studio shots album
     const media = shotPaths.map((_, i) => ({ type: 'photo', media: `attach://p${i}` }));
@@ -115,13 +124,12 @@ async function main() {
     const igUserId = process.env.IG_USER_ID;
 
     if (!igToken || !igUserId) {
-      await progress.finish('✅ Shots + reel ready above (Instagram auto-post is not configured).');
       await sendManualCaption(chatId, caption, igUser);
       console.log('done (manual mode — IG secrets not set)');
       return;
     }
 
-    await progress.update('▶ Step 4 — preparing reel for Instagram review');
+    await milestone('▶ Step 4 — preparing reel for Instagram review');
     let parked;
     try {
       parked = await hostOnPages({
@@ -131,12 +139,13 @@ async function main() {
       });
     } catch (e) {
       console.error('hosting failed:', e.message);
-      await progress.finish(`⚠️ Shots + reel are ready above, but auto-post setup failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`);
+      await tgJson('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ Shots + reel are ready above, but auto-post setup failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
+      });
       await sendManualCaption(chatId, caption, igUser);
       return;
     }
-
-    await progress.finish('✅ Ready — see the shots + reel above.');
 
     await tgJson('sendMessage', {
       chat_id: chatId,
@@ -153,7 +162,7 @@ async function main() {
     console.log('done (awaiting approval)');
   } catch (e) {
     console.error('pipeline error:', e.message);
-    await progress.finish('⚠️ Something went wrong: ' + String(e.message).slice(0, 200));
+    await tgJson('sendMessage', { chat_id: chatId, text: '⚠️ Something went wrong: ' + String(e.message).slice(0, 200) });
     process.exit(1);
   } finally {
     try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {}
