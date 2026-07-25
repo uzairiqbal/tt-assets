@@ -1,0 +1,22 @@
+name: test-post
+
+# One-off diagnostic: posts a single image via Graph API to confirm
+# IG_ACCESS_TOKEN / IG_USER_ID are valid. Not part of the normal pipeline.
+on:
+  repository_dispatch:
+    types: [test-post]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Test Graph API post
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IMAGE_URL: ${{ github.event.client_payload.image_url }}
+        run: node ci/test-post-image.js
