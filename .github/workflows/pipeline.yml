@@ -30,7 +30,9 @@ jobs:
       - name: Install rembg (free background removal)
         run: pip install "rembg[cli]" onnxruntime
 
-      # ffmpeg is preinstalled on ubuntu-latest runners
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
       - name: Run pipeline and reply on Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
