@@ -2,7 +2,7 @@
 /*
  * GitHub Actions entrypoint for the mobile pipeline.
  * Trigger: repository_dispatch { client_payload: { photo_url, chat_id } }.
- * Downloads the Telegram photo -> runs the shared pipeline -> replies to the chat with 3 shots + reel.
+ * Downloads the Telegram photo -> runs the shared pipeline -> replies to the chat with 3 shots + reel + caption.
  * Secrets come from env (PHOTOROOM_API_KEY, TELEGRAM_BOT_TOKEN). Never logged.
  */
 const fs = require('fs');
@@ -14,20 +14,27 @@ const { pick: pickCaption } = require('../captions.js');
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
 
-async function tgSend(method, fd) {
+// Send FormData (for file uploads)
+async function tgForm(method, fd) {
   const r = await fetch(`${TG}/${method}`, { method: 'POST', body: fd });
   const j = await r.json().catch(() => ({}));
   if (!j.ok) console.error(`Telegram ${method} failed:`, JSON.stringify(j).slice(0, 300));
   return j;
 }
-function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
 
-async function sendText(chatId, text) {
-  const fd = new FormData();
-  fd.append('chat_id', String(chatId));
-  fd.append('text', text);
-  return tgSend('sendMessage', fd);
+// Send JSON (for text messages)
+async function tgJson(method, body) {
+  const r = await fetch(`${TG}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) console.error(`Telegram ${method} failed:`, JSON.stringify(j).slice(0, 300));
+  return j;
 }
+
+function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
 
 async function main() {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
@@ -41,17 +48,14 @@ async function main() {
   const imagePath = path.join(work, 'input.jpg');
 
   try {
-    // download the source photo (photoUrl embeds the bot token — do not log it)
     const res = await fetch(photoUrl);
     if (!res.ok) throw new Error('photo download failed ' + res.status);
     fs.writeFileSync(imagePath, Buffer.from(await res.arrayBuffer()));
 
-    // optional audio: repo file assets/audio.mp3 if present (else silent, user adds IG music)
     const repoAudio = path.join(__dirname, '..', 'assets', 'audio.mp3');
     const reelAudio = fs.existsSync(repoAudio) ? repoAudio : '';
 
-    const logs = [];
-    const emit = l => { logs.push(l); console.log(l); };
+    const emit = l => console.log(l);
     const { shotPaths, reelPath } = await runPipeline({
       imagePath, outDir,
       config: {
@@ -65,47 +69,50 @@ async function main() {
       emit,
     });
 
-    // 3 studio shots as an album
+    // 1 — 3 studio shots album
     const media = shotPaths.map((_, i) => ({ type: 'photo', media: `attach://p${i}` }));
     const albumFd = new FormData();
     albumFd.append('chat_id', String(chatId));
     albumFd.append('media', JSON.stringify(media));
     shotPaths.forEach((p, i) => albumFd.append(`p${i}`, ...blobFrom(p, `shot_${i + 1}.jpg`)));
-    await tgSend('sendMediaGroup', albumFd);
+    await tgForm('sendMediaGroup', albumFd);
 
-    // the reel
+    // 2 — reel video
     const vFd = new FormData();
     vFd.append('chat_id', String(chatId));
     vFd.append('video', ...blobFrom(reelPath, 'reel.mp4'));
     vFd.append('supports_streaming', 'true');
-    vFd.append('caption', '🎬 Reel ready — save it, then post from your Instagram page below.');
-    await tgSend('sendVideo', vFd);
+    vFd.append('caption', '🎬 Reel ready — save it then post to Instagram.');
+    await tgForm('sendVideo', vFd);
 
-    // Post instructions + copy-ready caption + Instagram link
-    const igCaption = pickCaption();
+    // 3 — caption (code block = one tap to copy on mobile) + Instagram link
+    const caption = pickCaption();
     const igUser = process.env.IG_USERNAME || 'tshirtsandtrousers_';
-    const postMsg = [
-      '📋 *Copy this caption:*',
-      '```',
-      igCaption,
-      '```',
-      '',
-      '📲 *Post steps:*',
-      '1. Save the reel above',
-      '2. Open Instagram → tap ＋ → Reel',
-      '3. Select saved reel → Next → paste caption → Share',
-      '',
-      `👉 [Open your Instagram page](https://instagram.com/${igUser})`,
-    ].join('\n');
-    await tgSend('sendMessage', { chat_id: chatId, text: postMsg, parse_mode: 'Markdown', disable_web_page_preview: false });
+    const igLink = `https://www.instagram.com/${igUser}/`;
+
+    // Send caption as a code block — one tap selects all text on mobile
+    await tgJson('sendMessage', {
+      chat_id: chatId,
+      text: `📋 Tap the caption below to copy it, then open Instagram and paste:\n\n\`\`\`\n${caption}\n\`\`\``,
+      parse_mode: 'Markdown',
+    });
+
+    // Send Instagram link as a separate message so it shows the page preview
+    await tgJson('sendMessage', {
+      chat_id: chatId,
+      text: `👆 Copy caption above → then tap below to open your Instagram page and post:\n\n${igLink}`,
+      disable_web_page_preview: false,
+    });
 
     console.log('done');
   } catch (e) {
     console.error('pipeline error:', e.message);
-    try { await sendText(chatId, '⚠️ Something went wrong building your reel: ' + String(e.message).slice(0, 200)); } catch (_) {}
+    try {
+      await tgJson('sendMessage', { chat_id: chatId, text: '⚠️ Something went wrong: ' + String(e.message).slice(0, 200) });
+    } catch (_) {}
     process.exit(1);
   } finally {
-    try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {}
   }
 }
 
