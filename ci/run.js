@@ -10,7 +10,7 @@ const path = require('path');
 const os = require('os');
 const { runPipeline } = require('../pipeline.js');
 const { pick: pickCaption } = require('../captions.js');
-const { postReel } = require('./instagram.js');
+const { hostOnPages } = require('./instagram.js');
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
@@ -100,39 +100,48 @@ async function main() {
     vFd.append('caption', '🎬 Reel ready — save it then post to Instagram.');
     await tgForm('sendVideo', vFd);
 
-    // 3 — publish, or hand the caption over for a manual post
+    // 3 — park the reel and ask for approval. Nothing is published without a tap.
     const caption = pickCaption();
     const igUser = process.env.IG_USERNAME || 'tshirtsandtrousers_';
     const igToken = process.env.IG_ACCESS_TOKEN;
     const igUserId = process.env.IG_USER_ID;
 
-    if (igToken && igUserId) {
-      await tgJson('sendMessage', { chat_id: chatId, text: '📤 Posting to Instagram…' });
-      try {
-        const permalink = await postReel({
-          reelPath, caption, igUserId, token: igToken,
-          pagesBase: process.env.PAGES_BASE || 'https://uzairiqbal.github.io/tt-assets',
-          emit,
-        });
-        await tgJson('sendMessage', {
-          chat_id: chatId,
-          text: `✅ Posted to @${igUser}\n\n${permalink}`,
-          disable_web_page_preview: false,
-        });
-      } catch (e) {
-        // Posting failed — fall back to the manual flow so the run is still useful
-        console.error('instagram post failed:', e.message);
-        await tgJson('sendMessage', {
-          chat_id: chatId,
-          text: `⚠️ Auto-post failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
-        });
-        await sendManualCaption(chatId, caption, igUser);
-      }
-    } else {
+    if (!igToken || !igUserId) {
       await sendManualCaption(chatId, caption, igUser);
+      console.log('done (manual mode — IG secrets not set)');
+      return;
     }
 
-    console.log('done');
+    let parked;
+    try {
+      parked = await hostOnPages({
+        reelPath, caption,
+        pagesBase: process.env.PAGES_BASE || 'https://uzairiqbal.github.io/tt-assets',
+        emit,
+      });
+    } catch (e) {
+      console.error('hosting failed:', e.message);
+      await tgJson('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ Could not prepare the reel for posting: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
+      });
+      await sendManualCaption(chatId, caption, igUser);
+      return;
+    }
+
+    await tgJson('sendMessage', {
+      chat_id: chatId,
+      text: `👀 *Review before posting*\n\nCaption that will be used:\n\`\`\`\n${caption}\n\`\`\`\nPost this reel to @${igUser}?`,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ Post it', callback_data: `post:${parked.id}` },
+          { text: '❌ Cancel', callback_data: `skip:${parked.id}` },
+        ]],
+      },
+    });
+
+    console.log('done (awaiting approval)');
   } catch (e) {
     console.error('pipeline error:', e.message);
     try {
