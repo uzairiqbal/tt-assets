@@ -10,6 +10,7 @@ const path = require('path');
 const os = require('os');
 const { runPipeline } = require('../pipeline.js');
 const { pick: pickCaption } = require('../captions.js');
+const { postReel } = require('./instagram.js');
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
@@ -35,6 +36,20 @@ async function tgJson(method, body) {
 }
 
 function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
+
+// Manual-post fallback: caption in a code block (one tap copies it) + profile link.
+async function sendManualCaption(chatId, caption, igUser) {
+  await tgJson('sendMessage', {
+    chat_id: chatId,
+    text: `📋 Tap the caption below to copy it, then open Instagram and paste:\n\n\`\`\`\n${caption}\n\`\`\``,
+    parse_mode: 'Markdown',
+  });
+  await tgJson('sendMessage', {
+    chat_id: chatId,
+    text: `👆 Copy caption above → then tap below to open your Instagram page and post:\n\nhttps://www.instagram.com/${igUser}/`,
+    disable_web_page_preview: false,
+  });
+}
 
 async function main() {
   const ev = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
@@ -85,24 +100,37 @@ async function main() {
     vFd.append('caption', '🎬 Reel ready — save it then post to Instagram.');
     await tgForm('sendVideo', vFd);
 
-    // 3 — caption (code block = one tap to copy on mobile) + Instagram link
+    // 3 — publish, or hand the caption over for a manual post
     const caption = pickCaption();
     const igUser = process.env.IG_USERNAME || 'tshirtsandtrousers_';
-    const igLink = `https://www.instagram.com/${igUser}/`;
+    const igToken = process.env.IG_ACCESS_TOKEN;
+    const igUserId = process.env.IG_USER_ID;
 
-    // Send caption as a code block — one tap selects all text on mobile
-    await tgJson('sendMessage', {
-      chat_id: chatId,
-      text: `📋 Tap the caption below to copy it, then open Instagram and paste:\n\n\`\`\`\n${caption}\n\`\`\``,
-      parse_mode: 'Markdown',
-    });
-
-    // Send Instagram link as a separate message so it shows the page preview
-    await tgJson('sendMessage', {
-      chat_id: chatId,
-      text: `👆 Copy caption above → then tap below to open your Instagram page and post:\n\n${igLink}`,
-      disable_web_page_preview: false,
-    });
+    if (igToken && igUserId) {
+      await tgJson('sendMessage', { chat_id: chatId, text: '📤 Posting to Instagram…' });
+      try {
+        const permalink = await postReel({
+          reelPath, caption, igUserId, token: igToken,
+          pagesBase: process.env.PAGES_BASE || 'https://uzairiqbal.github.io/tt-assets',
+          emit,
+        });
+        await tgJson('sendMessage', {
+          chat_id: chatId,
+          text: `✅ Posted to @${igUser}\n\n${permalink}`,
+          disable_web_page_preview: false,
+        });
+      } catch (e) {
+        // Posting failed — fall back to the manual flow so the run is still useful
+        console.error('instagram post failed:', e.message);
+        await tgJson('sendMessage', {
+          chat_id: chatId,
+          text: `⚠️ Auto-post failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
+        });
+        await sendManualCaption(chatId, caption, igUser);
+      }
+    } else {
+      await sendManualCaption(chatId, caption, igUser);
+    }
 
     console.log('done');
   } catch (e) {

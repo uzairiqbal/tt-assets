@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed to push the reel for GitHub Pages hosting
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +40,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           PHOTOROOM_API_KEY: ${{ secrets.PHOTOROOM_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          PAGES_BASE: "https://uzairiqbal.github.io/tt-assets"
           BRAND_BG_PROMPT: "a clean minimal light neutral studio background, soft even lighting, premium streetwear catalog"
           SECONDS_PER_SHOT: "4"
           IG_USERNAME: "tshirtsandtrousers_"
