@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { runPipeline } = require('../pipeline.js');
+const { pick: pickCaption } = require('../captions.js');
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
@@ -81,7 +82,7 @@ async function main() {
     await tgSend('sendVideo', vFd);
 
     // Post instructions + copy-ready caption + Instagram link
-    const igCaption = (process.env.IG_CAPTION || '').replace(/\\n/g, '\n');
+    const igCaption = pickCaption();
     const igUser = process.env.IG_USERNAME || 'tshirtsandtrousers_';
     const postMsg = [
       '📋 *Copy this caption:*',

@@ -41,5 +41,4 @@ jobs:
           BRAND_BG_PROMPT: "a clean minimal light neutral studio background, soft even lighting, premium streetwear catalog"
           SECONDS_PER_SHOT: "4"
           IG_USERNAME: "tshirtsandtrousers_"
-          IG_CAPTION: "🔥 New drop — limited pieces available.\nPremium quality. Unbeatable price.\n\n📩 DM to order or grab yours before it's gone.\n🚚 Nationwide delivery available.\n\n#TShirtsAndTrousers #NewArrival #PakistanFashion #StreetwearPK #AffordableFashion #MensFashion #OOTDPakistan #LimitedStock #DMToOrder #ShopNow"
         run: node ci/run.js
