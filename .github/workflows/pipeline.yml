@@ -40,5 +40,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BRAND_BG_PROMPT: "a clean minimal light neutral studio background, soft even lighting, premium streetwear catalog"
           SECONDS_PER_SHOT: "4"
-          IG_CAPTION: "Sage-grey. Long sleeve. Zero effort, all impact. 🌿\nPremium everyday fit — the staple your rotation's been missing.\n📩 DM to order.\n\n#StreetwearEssentials #SageGreen #LongSleeveTee #MinimalStyle #EverydayEssentials #WardrobeStaple #ReelsInstagram #TShirtsAndTrousers"
+          IG_USERNAME: "tshirtsandtrousers_"
+          IG_CAPTION: "🔥 New drop — limited pieces available.\nPremium quality. Unbeatable price.\n\n📩 DM to order or grab yours before it's gone.\n🚚 Nationwide delivery available.\n\n#TShirtsAndTrousers #NewArrival #PakistanFashion #StreetwearPK #AffordableFashion #MensFashion #OOTDPakistan #LimitedStock #DMToOrder #ShopNow"
         run: node ci/run.js

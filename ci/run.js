@@ -72,14 +72,31 @@ async function main() {
     shotPaths.forEach((p, i) => albumFd.append(`p${i}`, ...blobFrom(p, `shot_${i + 1}.jpg`)));
     await tgSend('sendMediaGroup', albumFd);
 
-    // the reel + caption
-    const caption = (process.env.IG_CAPTION || '').replace(/\\n/g, '\n');
+    // the reel
     const vFd = new FormData();
     vFd.append('chat_id', String(chatId));
     vFd.append('video', ...blobFrom(reelPath, 'reel.mp4'));
     vFd.append('supports_streaming', 'true');
-    vFd.append('caption', '🎬 Your reel is ready — save it and tap Share → Instagram.\n\n' + caption);
+    vFd.append('caption', '🎬 Reel ready — save it, then post from your Instagram page below.');
     await tgSend('sendVideo', vFd);
+
+    // Post instructions + copy-ready caption + Instagram link
+    const igCaption = (process.env.IG_CAPTION || '').replace(/\\n/g, '\n');
+    const igUser = process.env.IG_USERNAME || 'tshirtsandtrousers_';
+    const postMsg = [
+      '📋 *Copy this caption:*',
+      '```',
+      igCaption,
+      '```',
+      '',
+      '📲 *Post steps:*',
+      '1. Save the reel above',
+      '2. Open Instagram → tap ＋ → Reel',
+      '3. Select saved reel → Next → paste caption → Share',
+      '',
+      `👉 [Open your Instagram page](https://instagram.com/${igUser})`,
+    ].join('\n');
+    await tgSend('sendMessage', { chat_id: chatId, text: postMsg, parse_mode: 'Markdown', disable_web_page_preview: false });
 
     console.log('done');
   } catch (e) {
