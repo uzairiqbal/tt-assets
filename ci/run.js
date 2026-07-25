@@ -11,6 +11,7 @@ const os = require('os');
 const { runPipeline } = require('../pipeline.js');
 const { pick: pickCaption } = require('../captions.js');
 const { hostOnPages } = require('./instagram.js');
+const { makeReporter } = require('./progress.js');
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
@@ -38,6 +39,8 @@ async function tgJson(method, body) {
 function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
 
 // Manual-post fallback: caption in a code block (one tap copies it) + profile link.
+// Username goes in an inline code span — its trailing "_" would otherwise be read
+// as an unclosed Markdown italic marker and make Telegram reject the whole message.
 async function sendManualCaption(chatId, caption, igUser) {
   await tgJson('sendMessage', {
     chat_id: chatId,
@@ -58,6 +61,9 @@ async function main() {
   const chatId = payload.chat_id;
   if (!photoUrl || !chatId) { console.error('missing photo_url/chat_id'); process.exit(1); }
 
+  const progress = makeReporter(BOT, chatId);
+  await progress.start('⚙️ Starting — downloading your photo…');
+
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ttrun-'));
   const outDir = path.join(work, 'out');
   const imagePath = path.join(work, 'input.jpg');
@@ -70,7 +76,7 @@ async function main() {
     const repoAudio = path.join(__dirname, '..', 'assets', 'audio.mp3');
     const reelAudio = fs.existsSync(repoAudio) ? repoAudio : '';
 
-    const emit = l => console.log(l);
+    const emit = l => progress.update(l);
     const { shotPaths, reelPath } = await runPipeline({
       imagePath, outDir,
       config: {
@@ -83,6 +89,8 @@ async function main() {
       },
       emit,
     });
+
+    await progress.update('▶ Step 3 — sending shots + reel to this chat');
 
     // 1 — 3 studio shots album
     const media = shotPaths.map((_, i) => ({ type: 'photo', media: `attach://p${i}` }));
@@ -97,7 +105,7 @@ async function main() {
     vFd.append('chat_id', String(chatId));
     vFd.append('video', ...blobFrom(reelPath, 'reel.mp4'));
     vFd.append('supports_streaming', 'true');
-    vFd.append('caption', '🎬 Reel ready — save it then post to Instagram.');
+    vFd.append('caption', '🎬 Reel ready — see below for what happens next.');
     await tgForm('sendVideo', vFd);
 
     // 3 — park the reel and ask for approval. Nothing is published without a tap.
@@ -107,11 +115,13 @@ async function main() {
     const igUserId = process.env.IG_USER_ID;
 
     if (!igToken || !igUserId) {
+      await progress.finish('✅ Shots + reel ready above (Instagram auto-post is not configured).');
       await sendManualCaption(chatId, caption, igUser);
       console.log('done (manual mode — IG secrets not set)');
       return;
     }
 
+    await progress.update('▶ Step 4 — preparing reel for Instagram review');
     let parked;
     try {
       parked = await hostOnPages({
@@ -121,17 +131,16 @@ async function main() {
       });
     } catch (e) {
       console.error('hosting failed:', e.message);
-      await tgJson('sendMessage', {
-        chat_id: chatId,
-        text: `⚠️ Could not prepare the reel for posting: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
-      });
+      await progress.finish(`⚠️ Shots + reel are ready above, but auto-post setup failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`);
       await sendManualCaption(chatId, caption, igUser);
       return;
     }
 
+    await progress.finish('✅ Ready — see the shots + reel above.');
+
     await tgJson('sendMessage', {
       chat_id: chatId,
-      text: `👀 *Review before posting*\n\nCaption that will be used:\n\`\`\`\n${caption}\n\`\`\`\nPost this reel to @${igUser}?`,
+      text: `👀 *Review before posting*\n\nCaption that will be used:\n\`\`\`\n${caption}\n\`\`\`\nPost this reel to \`@${igUser}\`?`,
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [[
@@ -144,9 +153,7 @@ async function main() {
     console.log('done (awaiting approval)');
   } catch (e) {
     console.error('pipeline error:', e.message);
-    try {
-      await tgJson('sendMessage', { chat_id: chatId, text: '⚠️ Something went wrong: ' + String(e.message).slice(0, 200) });
-    } catch (_) {}
+    await progress.finish('⚠️ Something went wrong: ' + String(e.message).slice(0, 200));
     process.exit(1);
   } finally {
     try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {}
