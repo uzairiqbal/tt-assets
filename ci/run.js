@@ -64,7 +64,8 @@ async function main() {
   // is a real notification and the whole run stays visible in chat history
   // if you check back after it's finished, instead of only ever showing
   // whatever the last edit happened to be.
-  const milestone = l => tgJson('sendMessage', { chat_id: chatId, text: l });
+  let currentStep = 'startup';
+  const milestone = l => { currentStep = l; return tgJson('sendMessage', { chat_id: chatId, text: l }); };
   await milestone('⚙️ Starting — downloading your photo…');
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ttrun-'));
@@ -84,7 +85,7 @@ async function main() {
     // own message — the per-scene "· ..." lines would just be noise there.
     const emit = l => {
       console.log(l);
-      if (/^\s*[▶✓✅⚠]/.test(l)) milestone(l.trim());
+      if (/^\s*[▶✓✅⚠]/.test(l)) { currentStep = l.trim(); milestone(l.trim()); }
     };
     const { shotPaths, reelPath } = await runPipeline({
       imagePath, outDir,
@@ -161,8 +162,19 @@ async function main() {
 
     console.log('done (awaiting approval)');
   } catch (e) {
-    console.error('pipeline error:', e.message);
-    await tgJson('sendMessage', { chat_id: chatId, text: '⚠️ Something went wrong: ' + String(e.message).slice(0, 200) });
+    const stack = (e.stack || e.message || String(e)).slice(0, 600);
+    console.error('pipeline error at step:', currentStep);
+    console.error(stack);
+    await tgJson('sendMessage', {
+      chat_id: chatId,
+      text: `⚠️ *Pipeline crashed*\nStep: \`${String(currentStep).slice(0, 80)}\`\n\`\`\`\n${String(e.message).slice(0, 300)}\n\`\`\``,
+      parse_mode: 'Markdown',
+    });
+    await tgJson('sendMessage', {
+      chat_id: chatId,
+      text: `📋 Stack trace:\n\`\`\`\n${stack}\n\`\`\``,
+      parse_mode: 'Markdown',
+    });
     process.exit(1);
   } finally {
     try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {}

@@ -64,8 +64,12 @@ async function runPipeline({ imagePath, outDir, config, emit }) {
     }
 
     if (!made) {
-      await loadEngine(primary).makeShot(imagePath, 'flat-lay', bg, outP, config);
-      emit && emit(`  ✓ shot ${i + 1} (flat-lay fallback) [${primary}]`);
+      try {
+        await loadEngine(primary).makeShot(imagePath, 'flat-lay', bg, outP, config);
+        emit && emit(`  ✓ shot ${i + 1} (flat-lay fallback) [${primary}]`);
+      } catch (fe) {
+        throw new Error(`Shot ${i + 1} flat-lay fallback failed [engine: ${primary}]: ${fe.message}`);
+      }
     }
 
     shotPaths.push(outP);
