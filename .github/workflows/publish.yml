@@ -1,7 +1,7 @@
 name: publish-reel
 
 # Fired by the Worker when the user taps "✅ Post it" in Telegram.
-# The reel is already hosted by the build phase — this only talks to Instagram.
+# The reel is already hosted by the build phase — this posts to Instagram + TikTok.
 on:
   repository_dispatch:
     types: [publish-reel]
@@ -16,11 +16,20 @@ jobs:
         with:
           node-version: 20
 
-      - name: Publish to Instagram
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to Instagram & TikTok
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          IG_USERNAME: "tshirtsandtrousers_"
-          PAGES_BASE: "https://uzairiqbal.github.io/tt-assets"
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          IG_ACCESS_TOKEN:      ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
+          IG_USERNAME:          "tshirtsandtrousers_"
+          PAGES_BASE:           "https://uzairiqbal.github.io/tt-assets"
+          TIKTOK_CLIENT_KEY:    ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          GH_SECRETS_TOKEN:     ${{ secrets.GH_SECRETS_TOKEN }}
+          # TIKTOK_POST_MODE: MEDIA_UPLOAD  (default — draft to inbox, no audit needed)
+          # TIKTOK_POST_MODE: DIRECT_POST   (public, requires TikTok audit approval)
         run: node ci/publish.js

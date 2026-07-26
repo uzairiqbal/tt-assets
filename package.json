@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "tweetsodium": "^0.0.5"
   }
 }
