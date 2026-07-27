@@ -15,24 +15,41 @@ const { hostOnPages } = require('./instagram.js');
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TG = `https://api.telegram.org/bot${BOT}`;
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// GitHub Actions runners intermittently can't reach Telegram (ETIMEDOUT on
+// api.telegram.org). Retry with backoff so one network blip doesn't crash the
+// whole pipeline after the shots/reel are already built.
+async function tgFetch(method, init, label) {
+  let lastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const r = await fetch(`${TG}/${method}`, init);
+      const j = await r.json().catch(() => ({}));
+      if (!j.ok) console.error(`Telegram ${method} failed:`, JSON.stringify(j).slice(0, 300));
+      return j;
+    } catch (e) {
+      lastErr = e;
+      console.error(`Telegram ${method} network error (attempt ${attempt}/4):`, e.message);
+      if (attempt < 4) await sleep(attempt * 3000);
+    }
+  }
+  console.error(`Telegram ${method} gave up after 4 attempts`);
+  return { ok: false, _networkError: String(lastErr && lastErr.message) };
+}
+
 // Send FormData (for file uploads)
 async function tgForm(method, fd) {
-  const r = await fetch(`${TG}/${method}`, { method: 'POST', body: fd });
-  const j = await r.json().catch(() => ({}));
-  if (!j.ok) console.error(`Telegram ${method} failed:`, JSON.stringify(j).slice(0, 300));
-  return j;
+  return tgFetch(method, { method: 'POST', body: fd });
 }
 
 // Send JSON (for text messages)
 async function tgJson(method, body) {
-  const r = await fetch(`${TG}/${method}`, {
+  return tgFetch(method, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!j.ok) console.error(`Telegram ${method} failed:`, JSON.stringify(j).slice(0, 300));
-  return j;
 }
 
 function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
