@@ -75,6 +75,7 @@ async function main() {
   const payload = (ev && ev.client_payload) || {};
   const photoUrl = payload.photo_url;
   const chatId = payload.chat_id;
+  const jobId = payload.job_id; // set by the Worker; lets a "Retry" tap re-run this exact job
   if (!photoUrl || !chatId) { console.error('missing photo_url/chat_id'); process.exit(1); }
 
   // Milestone updates are sent as fresh messages — not edits — so each one
@@ -83,6 +84,17 @@ async function main() {
   // whatever the last edit happened to be.
   let currentStep = 'startup';
   const milestone = l => { currentStep = l; return tgJson('sendMessage', { chat_id: chatId, text: l }); };
+
+  // Attach a one-tap "🔄 Retry" button when something transient breaks (a
+  // Telegram network blip, PhotoRoom, etc.). The Worker re-runs this same job
+  // from the stored photo, so the user never has to re-upload. Falls back to a
+  // plain message if the Worker didn't supply a job_id (e.g. KV not configured).
+  const offerRetry = text => {
+    const body = { chat_id: chatId, text, parse_mode: 'Markdown' };
+    if (jobId) body.reply_markup = { inline_keyboard: [[{ text: '🔄 Retry', callback_data: `retry:${jobId}` }]] };
+    return tgJson('sendMessage', body);
+  };
+
   await milestone('⚙️ Starting — downloading your photo…');
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ttrun-'));
@@ -125,7 +137,7 @@ async function main() {
     albumFd.append('chat_id', String(chatId));
     albumFd.append('media', JSON.stringify(media));
     shotPaths.forEach((p, i) => albumFd.append(`p${i}`, ...blobFrom(p, `shot_${i + 1}.jpg`)));
-    await tgForm('sendMediaGroup', albumFd);
+    const album = await tgForm('sendMediaGroup', albumFd);
 
     // 2 — reel video
     const vFd = new FormData();
@@ -133,7 +145,15 @@ async function main() {
     vFd.append('video', ...blobFrom(reelPath, 'reel.mp4'));
     vFd.append('supports_streaming', 'true');
     vFd.append('caption', '🎬 Reel ready — see below for what happens next.');
-    await tgForm('sendVideo', vFd);
+    const vid = await tgForm('sendVideo', vFd);
+
+    // If the shots or reel couldn't be delivered (Telegram unreachable from the
+    // runner), don't limp forward into a confusing review step — offer a retry.
+    if (!album.ok || !vid.ok) {
+      await offerRetry('⚠️ Your shots and reel were built, but delivering them here failed (network). Tap Retry to rebuild and resend — no need to re-upload the photo.');
+      console.log('done (delivery failed — offered retry)');
+      return;
+    }
 
     // 3 — park the reel and ask for approval. Nothing is published without a tap.
     const caption = pickCaption();
@@ -182,11 +202,9 @@ async function main() {
     const stack = (e.stack || e.message || String(e)).slice(0, 600);
     console.error('pipeline error at step:', currentStep);
     console.error(stack);
-    await tgJson('sendMessage', {
-      chat_id: chatId,
-      text: `⚠️ *Pipeline crashed*\nStep: \`${String(currentStep).slice(0, 80)}\`\n\`\`\`\n${String(e.message).slice(0, 300)}\n\`\`\``,
-      parse_mode: 'Markdown',
-    });
+    await offerRetry(
+      `⚠️ *Pipeline crashed*\nStep: \`${String(currentStep).slice(0, 80)}\`\n\`\`\`\n${String(e.message).slice(0, 300)}\n\`\`\``
+    );
     await tgJson('sendMessage', {
       chat_id: chatId,
       text: `📋 Stack trace:\n\`\`\`\n${stack}\n\`\`\``,
