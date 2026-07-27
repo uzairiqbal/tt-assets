@@ -106,8 +106,11 @@ async function main() {
     if (!res.ok) throw new Error('photo download failed ' + res.status);
     fs.writeFileSync(imagePath, Buffer.from(await res.arrayBuffer()));
 
-    const repoAudio = path.join(__dirname, '..', 'assets', 'audio.mp3');
-    const reelAudio = fs.existsSync(repoAudio) ? repoAudio : '';
+    // Music comes from the library at tt-assets/assets/music/ — the pipeline
+    // picks one track at random per reel. The old single assets/audio.mp3 is
+    // still honoured if it is there, so nothing breaks.
+    const legacyAudio = path.join(__dirname, '..', 'assets', 'audio.mp3');
+    const reelAudio = fs.existsSync(legacyAudio) ? legacyAudio : '';
 
     // Every line goes to the Action log (full detail, for debugging).
     // Only step headers/results (▶ ✓ ✅ ⚠) also go to Telegram, as their
@@ -122,22 +125,38 @@ async function main() {
         photoroomKey: process.env.PHOTOROOM_API_KEY,
         geminiKey: process.env.GEMINI_API_KEY,
         brandBg: payload.bg || process.env.BRAND_BG_PROMPT || 'a clean minimal light neutral studio background, soft even lighting',
-        engine: payload.engine || process.env.ENGINE || 'auto',
+        // 'passthrough' = no AI. You edit the photo yourself in the PhotoRoom
+        // mobile app and send the finished picture, so the pipeline must not
+        // edit it again. Set ENGINE to bring the AI engines back later.
+        engine: payload.engine || process.env.ENGINE || 'passthrough',
         reelAudio,
         secondsPerShot: parseFloat(process.env.SECONDS_PER_SHOT || '4'),
+        // Baked-in music sits quietly under the reel. 1.0 would be full volume.
+        musicVolume: parseFloat(process.env.MUSIC_VOLUME || '0.12'),
       },
       emit,
     });
 
     await milestone('▶ Step 3 — sending shots + reel to this chat');
 
-    // 1 — 3 studio shots album
-    const media = shotPaths.map((_, i) => ({ type: 'photo', media: `attach://p${i}` }));
-    const albumFd = new FormData();
-    albumFd.append('chat_id', String(chatId));
-    albumFd.append('media', JSON.stringify(media));
-    shotPaths.forEach((p, i) => albumFd.append(`p${i}`, ...blobFrom(p, `shot_${i + 1}.jpg`)));
-    const album = await tgForm('sendMediaGroup', albumFd);
+    // 1 — the picture(s). Telegram's album endpoint refuses a group of one, and
+    // the passthrough engine returns exactly one picture, so send a single photo
+    // in that case and an album only when there really are several.
+    let album;
+    if (shotPaths.length === 1) {
+      const photoFd = new FormData();
+      photoFd.append('chat_id', String(chatId));
+      photoFd.append('photo', ...blobFrom(shotPaths[0], 'shot_1.jpg'));
+      photoFd.append('caption', '🖼 Your photo, kept exactly as you sent it.');
+      album = await tgForm('sendPhoto', photoFd);
+    } else {
+      const media = shotPaths.map((_, i) => ({ type: 'photo', media: `attach://p${i}` }));
+      const albumFd = new FormData();
+      albumFd.append('chat_id', String(chatId));
+      albumFd.append('media', JSON.stringify(media));
+      shotPaths.forEach((p, i) => albumFd.append(`p${i}`, ...blobFrom(p, `shot_${i + 1}.jpg`)));
+      album = await tgForm('sendMediaGroup', albumFd);
+    }
 
     // 2 — reel video
     const vFd = new FormData();
