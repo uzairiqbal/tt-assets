@@ -1,0 +1,36 @@
+name: video-pipeline
+
+# Send a video to the Telegram bot -> the Worker fires this.
+# Deliberately lighter than pipeline.yml: the video path needs no Python, no
+# rembg model download and no sharp, so every run starts far quicker.
+
+on:
+  repository_dispatch:
+    types: [new-video]
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed to push the reel for GitHub Pages hosting
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Edit the video and reply on Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          PAGES_BASE: "https://uzairiqbal.github.io/tt-assets"
+          IG_USERNAME: "tshirtsandtrousers_"
+          VIDEO_TEMPLATE: "showcase"
+          VIDEO_HOOK: "New drop"
+          VIDEO_CTA: "DM to order"
+        run: node ci/run-video.js
