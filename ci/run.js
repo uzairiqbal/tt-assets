@@ -54,6 +54,14 @@ async function tgJson(method, body) {
 
 function blobFrom(p, name) { return [new Blob([fs.readFileSync(p)]), name]; }
 
+// AI editing is paused. Anything not explicitly chosen — and the legacy 'auto',
+// which now always ends up at the background-stripping free engine — resolves
+// to passthrough, which keeps your photo exactly as you sent it.
+const PAUSED = new Set(['auto', '', undefined, null]);
+function resolveEngine(requested) {
+  return PAUSED.has(requested) ? 'passthrough' : requested;
+}
+
 // Manual-post fallback: caption in a code block (one tap copies it) + profile link.
 // Username goes in an inline code span — its trailing "_" would otherwise be read
 // as an unclosed Markdown italic marker and make Telegram reject the whole message.
@@ -128,7 +136,14 @@ async function main() {
         // 'passthrough' = no AI. You edit the photo yourself in the PhotoRoom
         // mobile app and send the finished picture, so the pipeline must not
         // edit it again. Set ENGINE to bring the AI engines back later.
-        engine: payload.engine || process.env.ENGINE || 'passthrough',
+        //
+        // 'auto' is deliberately remapped. It used to mean "try PhotoRoom, fall
+        // back to the free engine". With no PhotoRoom credits left, that
+        // fallback ALWAYS fires, and the free engine is rembg — which strips the
+        // background off the photo you already edited by hand. The Telegram
+        // Worker still sends 'auto' until it is redeployed, so it is caught
+        // here, where a plain git push is enough to take effect.
+        engine: resolveEngine(payload.engine || process.env.ENGINE),
         reelAudio,
         secondsPerShot: parseFloat(process.env.SECONDS_PER_SHOT || '4'),
         // Baked-in music sits quietly under the reel. 1.0 would be full volume.
