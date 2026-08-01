@@ -45,6 +45,9 @@ async function main() {
   const [igResult, ttResult] = await Promise.allSettled([
     publishHosted({
       videoUrl, caption, igUserId, token: igToken,
+      // Names the reel's own audio so it gets an audio page others can reuse.
+      // This does NOT add Instagram library music — the API cannot do that.
+      audioName: process.env.IG_AUDIO_NAME || 'TShirts & Trousers',
       emit: l => progress.update(l),
     }),
     hasTikTok

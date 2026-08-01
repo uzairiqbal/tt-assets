@@ -19,8 +19,21 @@ So only add music you are allowed to publish:
 commercial release. That is copyright infringement, and it can also get your
 Instagram post muted or taken down.
 
-## The safe alternative
+## Leaving this folder empty is the recommended setup
 
-Leave this folder empty. The reel is then built silent, and you add music inside
-Instagram when you post. Instagram's own music library is licensed for exactly
-this, so it is always safe and it usually performs better in the algorithm too.
+This folder is empty on purpose, and it should probably stay that way.
+
+Reels are built **silent**, and you add the sound inside the Instagram app when
+you post. That is not a compromise — it is the better option, for a concrete
+reason:
+
+**A trending sound only counts as trending when you pick it inside Instagram.**
+Choosing it there attaches your reel to that sound's audio page, where people
+browse and discover reels. Music baked into the video file joins no audio page,
+so it earns you nothing, and Instagram may suppress re-uploaded audio.
+
+So baked-in music is worse than silence for reach. Only add tracks here if you
+want a quiet bed for somewhere else, like TikTok or your Shopify page.
+
+If you do add tracks, remember they will also play under any Instagram sound you
+add later unless you mute the original audio in the app.

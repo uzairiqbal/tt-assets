@@ -117,14 +117,33 @@ function readParked(id) {
 
 /* ---------- publish phase ---------- */
 
-async function createContainer(igUserId, token, videoUrl, caption, log) {
+/*
+ * About music, because this is the most misunderstood part of the whole flow:
+ *
+ * You CANNOT attach a track from Instagram's music library through the API.
+ * There is no parameter for it. Trending sounds, licensed catalogue music and
+ * sound effects are all app-only. Whatever audio is inside the mp4 is the audio
+ * the reel gets.
+ *
+ * `audio_name` does NOT choose a song. It only puts a NAME on the audio already
+ * inside your video, which gives the reel its own audio page that other people
+ * can tap and reuse. That is a small discovery win and the only one the API
+ * offers. It can be set ONCE and never changed.
+ *
+ * To use a trending sound you must post from the Instagram app by hand. The bot
+ * sends you the reel file and the caption so that takes about twenty seconds.
+ */
+async function createContainer(igUserId, token, videoUrl, caption, log, audioName) {
+  const params = { media_type: 'REELS', video_url: videoUrl, caption, access_token: token };
+  if (audioName) params.audio_name = audioName;
+
   const res = await fetch(`${GRAPH}/${igUserId}/media`, {
     method: 'POST',
-    body: new URLSearchParams({ media_type: 'REELS', video_url: videoUrl, caption, access_token: token }),
+    body: new URLSearchParams(params),
   });
   const json = await res.json();
   if (json.error) throw new Error('Could not start upload: ' + explainMediaError(json.error.message));
-  log(`  · container ${json.id}`);
+  log(`  · container ${json.id}` + (audioName ? ` (audio named "${audioName}")` : ''));
   return json.id;
 }
 
@@ -190,9 +209,9 @@ async function publishContainer(igUserId, token, containerId, log) {
  * Publish an already-hosted reel.
  * @returns {Promise<string>} permalink
  */
-async function publishHosted({ videoUrl, caption, igUserId, token, emit }) {
+async function publishHosted({ videoUrl, caption, igUserId, token, emit, audioName }) {
   const log = emit || (() => {});
-  const containerId = await createContainer(igUserId, token, videoUrl, caption, log);
+  const containerId = await createContainer(igUserId, token, videoUrl, caption, log, audioName);
   await waitForContainer(containerId, token, log);
   const permalink = await publishContainer(igUserId, token, containerId, log);
   log(`  ✓ live: ${permalink}`);

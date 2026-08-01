@@ -65,16 +65,39 @@ function resolveEngine(requested) {
 // Manual-post fallback: caption in a code block (one tap copies it) + profile link.
 // Username goes in an inline code span — its trailing "_" would otherwise be read
 // as an unclosed Markdown italic marker and make Telegram reject the whole message.
-async function sendManualCaption(chatId, caption, igUser) {
+/*
+ * The music route.
+ *
+ * Instagram's API cannot attach a track from Instagram's music library. There
+ * is no parameter for it — trending sounds are app-only. So a reel posted
+ * automatically can never carry a trending sound, and that sound is exactly
+ * what drives reach.
+ *
+ * So we send the reel as a FILE rather than a video. Telegram squeezes videos
+ * to make them play in chat, and that squeezed copy is not good enough to post.
+ * The file arrives untouched, you save it, and you post it from the Instagram
+ * app where you can pick any trending sound you like.
+ */
+async function sendForManualPost(chatId, reelPath, caption) {
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  fd.append('document', ...blobFrom(reelPath, 'reel.mp4'));
+  fd.append('caption', '⬇️ Save this file to post with Instagram music.');
+  await tgForm('sendDocument', fd);
+
   await tgJson('sendMessage', {
     chat_id: chatId,
-    text: `📋 Tap the caption below to copy it, then open Instagram and paste:\n\n\`\`\`\n${caption}\n\`\`\``,
+    text:
+      '🎵 *To post with a trending sound* (best reach)\n\n' +
+      '1. Tap the file above and save it to your phone\n' +
+      '2. Copy the caption below\n' +
+      '3. Open Instagram → new Reel → pick the saved video\n' +
+      '4. Tap *Add audio* and choose a trending sound\n' +
+      '5. Paste the caption and share\n\n' +
+      'Instagram only counts a sound as trending when you pick it inside the app, ' +
+      'which is why this last step cannot be automated.\n\n' +
+      `\`\`\`\n${caption}\n\`\`\``,
     parse_mode: 'Markdown',
-  });
-  await tgJson('sendMessage', {
-    chat_id: chatId,
-    text: `👆 Copy caption above → then tap below to open your Instagram page and post:\n\nhttps://www.instagram.com/${igUser}/`,
-    disable_web_page_preview: false,
   });
 }
 
@@ -195,8 +218,11 @@ async function main() {
     const igToken = process.env.IG_ACCESS_TOKEN;
     const igUserId = process.env.IG_USER_ID;
 
+    // Always offer the music route first. It is the one that actually earns
+    // reach, and it is the only way to get a trending sound onto the reel.
+    await sendForManualPost(chatId, reelPath, caption);
+
     if (!igToken || !igUserId) {
-      await sendManualCaption(chatId, caption, igUser);
       console.log('done (manual mode — IG secrets not set)');
       return;
     }
@@ -211,21 +237,27 @@ async function main() {
       });
     } catch (e) {
       console.error('hosting failed:', e.message);
+      // The file and caption were already sent above, so don't repeat them —
+      // just point back at them.
       await tgJson('sendMessage', {
         chat_id: chatId,
-        text: `⚠️ Shots + reel are ready above, but auto-post setup failed: ${String(e.message).slice(0, 180)}\n\nPost it manually with the caption below.`,
+        text: `⚠️ Auto-posting is unavailable right now: ${String(e.message).slice(0, 180)}\n\nNo problem — use the file and caption above and post it from the Instagram app. You get a trending sound that way anyway.`,
       });
-      await sendManualCaption(chatId, caption, igUser);
       return;
     }
 
     await tgJson('sendMessage', {
       chat_id: chatId,
-      text: `👀 *Review before posting*\n\nCaption that will be used:\n\`\`\`\n${caption}\n\`\`\`\nPost this reel to \`@${igUser}\`?`,
+      text:
+        `👀 *Or post it automatically*\n\n` +
+        `This posts to \`@${igUser}\` right now, but it will have *no trending sound* — ` +
+        `the API cannot add Instagram music. Its audio gets named "TShirts & Trousers" instead, ` +
+        `which gives you your own audio page.\n\n` +
+        `Use the file above if you want a trending sound.`,
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [[
-          { text: '✅ Post it', callback_data: `post:${parked.id}` },
+          { text: '⚡ Post now (no music)', callback_data: `post:${parked.id}` },
           { text: '❌ Cancel', callback_data: `skip:${parked.id}` },
         ]],
       },
